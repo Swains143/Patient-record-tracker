@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent } from "./components/ui/card"; // or "@/components/ui/card" if using alias
+import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { format } from "date-fns";
 
+// Firebase imports
+import { db } from "./firebaseConfig";
+import { collection, addDoc, getDocs, deleteDoc, doc } from "firebase/firestore";
+
 const ITEMS_PER_PAGE = 10;
 
 export default function PatientRecords() {
-  const [records, setRecords] = useState(() => {
-    const saved = localStorage.getItem("patientRecords");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [records, setRecords] = useState([]);
   const [form, setForm] = useState({
     name: "",
     regNo: "",
@@ -24,25 +25,33 @@ export default function PatientRecords() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortDesc, setSortDesc] = useState(true);
 
+  // Fetch records from Firestore on load
   useEffect(() => {
-    localStorage.setItem("patientRecords", JSON.stringify(records));
-  }, [records]);
+    const fetchRecords = async () => {
+      const querySnapshot = await getDocs(collection(db, "patientRecords"));
+      const recordsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRecords(recordsData);
+    };
+    fetchRecords();
+  }, []);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const addRecord = () => {
+  const addRecord = async () => {
     if (!form.name || !form.regNo || !form.hospital || !form.date) return;
-    const newRecords = [...records, { ...form }];
-    setRecords(sortDesc ? newRecords.sort((a, b) => new Date(b.date) - new Date(a.date)) : newRecords);
+
+    const newRecord = { ...form };
+    const docRef = await addDoc(collection(db, "patientRecords"), newRecord);
+
+    setRecords(prev => [...prev, { id: docRef.id, ...newRecord }]);
     setForm({ name: "", regNo: "", hospital: "", date: "" });
   };
 
-  const deleteRecord = (indexToDelete) => {
-    const updated = [...records];
-    updated.splice(indexToDelete, 1);
-    setRecords(updated);
+  const deleteRecord = async (id) => {
+    await deleteDoc(doc(db, "patientRecords", id));
+    setRecords(prev => prev.filter(r => r.id !== id));
   };
 
   const resetFilters = () => {
@@ -64,6 +73,7 @@ export default function PatientRecords() {
     link.click();
   };
 
+  // Filtering & Sorting
   const filteredRecords = records.filter((r) => {
     const matchesSearch =
       r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -169,14 +179,14 @@ export default function PatientRecords() {
               </tr>
             </thead>
             <tbody>
-              {paginatedRecords.map((rec, i) => (
-                <tr key={i}>
+              {paginatedRecords.map((rec) => (
+                <tr key={rec.id}>
                   <td className="border px-2 py-1">{rec.name}</td>
                   <td className="border px-2 py-1">{rec.regNo}</td>
                   <td className="border px-2 py-1">{rec.hospital}</td>
                   <td className="border px-2 py-1">{rec.date}</td>
                   <td className="border px-2 py-1">
-                    <Button variant="destructive" size="sm" onClick={() => deleteRecord(records.indexOf(rec))}>Delete</Button>
+                    <Button variant="destructive" size="sm" onClick={() => deleteRecord(rec.id)}>Delete</Button>
                   </td>
                 </tr>
               ))}
